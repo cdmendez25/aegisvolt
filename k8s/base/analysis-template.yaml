@@ -1,0 +1,39 @@
+# AnalysisTemplate: lo ejecuta Argo Rollouts en el paso "analysis" del canary.
+# Lanza un Job que (1) envía tráfico sintético SOLO a los pods canary y (2) consulta en
+# CloudWatch la tasa de errores 5xx de la revisión canary. Exit 0 => promover; exit 1 => rollback.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: canary-health
+spec:
+  args:
+    - name: service-name
+    - name: canary-hash
+  metrics:
+    - name: canary-check   # nombre corto: Argo lo usa para el nombre del Job
+      count: 1
+      failureLimit: 0
+      provider:
+        job:
+          spec:
+            backoffLimit: 0
+            activeDeadlineSeconds: 180
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: canary-check
+                    image: aegisvolt/canary-analysis:1.0
+                    imagePullPolicy: IfNotPresent
+                    command: ["python", "-m", "aegis_common.canary_check"]
+                    envFrom:
+                      - configMapRef: {name: aegisvolt-config}
+                      - secretRef: {name: aegisvolt-aws}
+                    env:
+                      - {name: CANARY_SERVICE, value: "{{args.service-name}}"}
+                      - {name: CANARY_HASH, value: "{{args.canary-hash}}"}
+                      - {name: CANARY_URL, value: "http://{{args.service-name}}-canary:8000"}
+                      - {name: PROBE_REQUESTS, value: "30"}
+                      - {name: MAX_ERROR_RATE, value: "0.05"}   # umbral: <= 5% de errores
+                      - {name: WINDOW_MINUTES, value: "5"}
+                      - {name: POD_TEMPLATE_HASH, value: "analysis"}

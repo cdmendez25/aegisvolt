@@ -1,0 +1,94 @@
+# Verificación de fondos, cobro y reembolso
+# Rollout = Deployment con estrategia CANARY gestionada por Argo Rollouts.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: billing-wallet-service
+  labels: {app: billing-wallet-service, tier: backend}
+spec:
+  replicas: 5                 # 5 réplicas => setWeight 20 = 1 pod canary / 4 stable
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels: {app: billing-wallet-service}
+  template:
+    metadata:
+      labels: {app: billing-wallet-service, tier: backend}
+    spec:
+      containers:
+        - name: app
+          image: aegisvolt/billing-wallet-service:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{name: http, containerPort: 8000}]
+          envFrom:
+            - configMapRef: {name: aegisvolt-config}
+            - secretRef: {name: aegisvolt-aws}
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            # Hash de la revisión (stable vs canary): dimensión "Revision" de las métricas
+            - name: POD_TEMPLATE_HASH
+              valueFrom: {fieldRef: {fieldPath: "metadata.labels['rollouts-pod-template-hash']"}}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 20m, memory: 96Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+  strategy:
+    canary:
+      canaryService: billing-wallet-service-canary   # Argo lo apunta SOLO a los pods nuevos (para el análisis)
+      stableService: billing-wallet-service-stable   # y este SOLO a los pods estables
+      maxSurge: 1
+      maxUnavailable: 0
+      steps:
+        - setWeight: 20              # 1) 20% de las réplicas con la versión nueva
+        - pause: {duration: 10s}
+        - analysis:                  # 2) health checks + tasa 5xx en CloudWatch
+            templates:
+              - templateName: canary-health
+            args:
+              - name: service-name
+                value: billing-wallet-service
+              - name: canary-hash
+                valueFrom:
+                  podTemplateHashValue: Latest
+        - setWeight: 60              # 3) análisis OK => 60% ...
+        - pause: {duration: 10s}
+        # 4) fin de los pasos => 100%. Si el análisis falla => abort => 100% stable (rollback)
+---
+# Service principal: selecciona TODOS los pods (stable + canary) => el tráfico interno se
+# reparte según la proporción de réplicas (20% canary durante el análisis).
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-wallet-service
+  labels: {app: billing-wallet-service}
+spec:
+  selector: {app: billing-wallet-service}
+  ports: [{name: http, port: 8000, targetPort: http}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-wallet-service-stable
+  labels: {app: billing-wallet-service, track: stable}
+spec:
+  selector: {app: billing-wallet-service}
+  ports: [{name: http, port: 8000, targetPort: http}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-wallet-service-canary
+  labels: {app: billing-wallet-service, track: canary}
+spec:
+  selector: {app: billing-wallet-service}
+  ports: [{name: http, port: 8000, targetPort: http}]

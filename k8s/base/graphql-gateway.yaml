@@ -1,0 +1,94 @@
+# Capa de agregación GraphQL + orquestador SAGA
+# Rollout = Deployment con estrategia CANARY gestionada por Argo Rollouts.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: graphql-gateway
+  labels: {app: graphql-gateway, tier: gateway}
+spec:
+  replicas: 5                 # 5 réplicas => setWeight 20 = 1 pod canary / 4 stable
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels: {app: graphql-gateway}
+  template:
+    metadata:
+      labels: {app: graphql-gateway, tier: gateway}
+    spec:
+      containers:
+        - name: app
+          image: aegisvolt/graphql-gateway:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{name: http, containerPort: 8000}]
+          envFrom:
+            - configMapRef: {name: aegisvolt-config}
+            - secretRef: {name: aegisvolt-aws}
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            # Hash de la revisión (stable vs canary): dimensión "Revision" de las métricas
+            - name: POD_TEMPLATE_HASH
+              valueFrom: {fieldRef: {fieldPath: "metadata.labels['rollouts-pod-template-hash']"}}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 20m, memory: 96Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+  strategy:
+    canary:
+      canaryService: graphql-gateway-canary   # Argo lo apunta SOLO a los pods nuevos (para el análisis)
+      stableService: graphql-gateway-stable   # y este SOLO a los pods estables
+      maxSurge: 1
+      maxUnavailable: 0
+      steps:
+        - setWeight: 20              # 1) 20% de las réplicas con la versión nueva
+        - pause: {duration: 10s}
+        - analysis:                  # 2) health checks + tasa 5xx en CloudWatch
+            templates:
+              - templateName: canary-health
+            args:
+              - name: service-name
+                value: graphql-gateway
+              - name: canary-hash
+                valueFrom:
+                  podTemplateHashValue: Latest
+        - setWeight: 60              # 3) análisis OK => 60% ...
+        - pause: {duration: 10s}
+        # 4) fin de los pasos => 100%. Si el análisis falla => abort => 100% stable (rollback)
+---
+# Service principal: selecciona TODOS los pods (stable + canary) => el tráfico interno se
+# reparte según la proporción de réplicas (20% canary durante el análisis).
+apiVersion: v1
+kind: Service
+metadata:
+  name: graphql-gateway
+  labels: {app: graphql-gateway}
+spec:
+  selector: {app: graphql-gateway}
+  ports: [{name: http, port: 8000, targetPort: http}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: graphql-gateway-stable
+  labels: {app: graphql-gateway, track: stable}
+spec:
+  selector: {app: graphql-gateway}
+  ports: [{name: http, port: 8000, targetPort: http}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: graphql-gateway-canary
+  labels: {app: graphql-gateway, track: canary}
+spec:
+  selector: {app: graphql-gateway}
+  ports: [{name: http, port: 8000, targetPort: http}]

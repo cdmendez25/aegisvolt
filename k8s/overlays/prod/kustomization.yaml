@@ -1,0 +1,33 @@
+# Ambiente PROD: namespace, configuración y host propios.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: aegisvolt-prod
+resources:
+  - ../../base
+labels:
+  - pairs: {aegisvolt/env: prod}
+configMapGenerator:
+  - name: aegisvolt-config
+    behavior: merge
+    literals:
+      - ENV=prod                       # => tablas aegisvolt-*-prod y logs /aegisvolt/prod/*
+      - PEAK_HOURS=17-21             # ventana de hora pico para la tarifa dinámica
+      - FLAG_ADMIN_ENABLED=false    # ¿se pueden cambiar flags desde la UI?
+patches:
+  - target: {kind: Ingress, name: aegisvolt}
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: prod.aegisvolt.localhost
+  - target: {kind: Service, name: graphql-gateway-nodeport}
+    patch: |-
+      - op: replace
+        path: /spec/ports/0/nodePort
+        value: 30083
+# El pipeline fija aquí el tag de las imágenes que se despliegan (scripts/deploy.sh)
+images:
+  - {name: aegisvolt/station-reservation-service, newTag: latest}
+  - {name: aegisvolt/billing-wallet-service, newTag: latest}
+  - {name: aegisvolt/energy-dispatch-service, newTag: latest}
+  - {name: aegisvolt/graphql-gateway, newTag: latest}
+  - {name: aegisvolt/frontend, newTag: latest}

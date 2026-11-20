@@ -1,0 +1,71 @@
+# =============================================================================
+# DESPLIEGUE POST-MERGE
+# Se dispara con el push que genera el MERGE de un PR en dev, test o prod.
+# El ambiente se determina DINÁMICAMENTE a partir de la rama destino:
+#     github.ref_name = dev  -> workspace dev  -> namespace aegisvolt-dev
+#     github.ref_name = test -> workspace test -> namespace aegisvolt-test
+#     github.ref_name = prod -> workspace prod -> namespace aegisvolt-prod
+# Luego: terraform apply (solo ese workspace) -> build -> CANARY en Kubernetes -> smoke E2E.
+# =============================================================================
+name: deploy
+
+on:
+  push:
+    branches: [dev, test, prod]
+
+# Nunca dos despliegues simultáneos al MISMO ambiente; ambientes distintos sí pueden correr.
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: deploy-${{ github.ref_name }}
+    runs-on: [self-hosted, aegisvolt]
+    environment: ${{ github.ref_name }}   # environments de GitHub (prod puede exigir aprobación)
+    env:
+      TARGET_ENV: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detectar ambiente destino
+        id: env
+        run: |
+          case "$TARGET_ENV" in dev|test|prod) ;; *) echo "::error::Rama no desplegable: $TARGET_ENV"; exit 1;; esac
+          echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "Merge detectado en '$TARGET_ENV' -> workspace '$TARGET_ENV', tag ${GITHUB_SHA::7}"
+
+      - name: terraform apply (solo el workspace del ambiente)
+        run: |
+          terraform -chdir=infra/live init -input=false
+          terraform -chdir=infra/live workspace select "$TARGET_ENV"
+          test "$(terraform -chdir=infra/live workspace show)" = "$TARGET_ENV"
+          terraform -chdir=infra/live apply -auto-approve -input=false -lock-timeout=120s
+
+      - name: Build de imágenes
+        run: ./scripts/build-images.sh "${{ steps.env.outputs.tag }}"
+
+      - name: Despliegue CANARY (20% -> análisis -> 60% -> 100%, rollback automático)
+        run: ./scripts/deploy.sh "$TARGET_ENV" "${{ steps.env.outputs.tag }}"
+
+      - name: Smoke / E2E post-despliegue
+        run: |
+          uv sync --group dev
+          MODE=full; [[ "$TARGET_ENV" == "prod" ]] && MODE=smoke
+          export APIGW_URL="$(terraform -chdir=infra/live output -raw api_gateway_invoke_url)"
+          E2E_ENV="$TARGET_ENV" E2E_MODE="$MODE" uv run pytest tests/e2e -m e2e -v
+
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "## Despliegue a \`$TARGET_ENV\`"
+            echo "- Workspace Terraform: \`$TARGET_ENV\`  ·  tag: \`${{ steps.env.outputs.tag }}\`"
+            echo '```'
+            kubectl -n "aegisvolt-$TARGET_ENV" get rollouts.argoproj.io
+            kubectl -n "aegisvolt-$TARGET_ENV" get analysisruns.argoproj.io --sort-by=.metadata.creationTimestamp | tail -5
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,48 @@
+[project]
+name = "aegisvolt"
+version = "1.0.0"
+description = "AegisVolt - Plataforma cloud-native de gestión de carga para flotas eléctricas"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "boto3>=1.35",
+    "httpx>=0.28",
+    "strawberry-graphql[fastapi]>=0.260",
+    "pydantic>=2.9",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "moto[dynamodb,logs,cloudwatch]>=5.0",
+    "ruff>=0.8",
+]
+prefect = [
+    "prefect>=3.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["services", "observability/prefect"]
+testpaths = ["tests/unit"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: requiere Floci en localhost:4566",
+    "e2e: requiere el ambiente desplegado (GRAPHQL_URL)",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aegis_common", "station_reservation", "billing_wallet", "energy_dispatch", "graphql_gateway"]

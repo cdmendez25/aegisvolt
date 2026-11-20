@@ -1,0 +1,20 @@
+# Un host por ambiente (el overlay lo cambia): /graphql -> gateway, / -> frontend.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aegisvolt
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"   # websockets (subscriptions)
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ENV.aegisvolt.localhost
+      http:
+        paths:
+          - path: /graphql
+            pathType: Prefix
+            backend: {service: {name: graphql-gateway, port: {number: 8000}}}
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: frontend, port: {number: 8080}}}

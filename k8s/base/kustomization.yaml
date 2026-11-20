@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs: {app.kubernetes.io/part-of: aegisvolt}
+resources:
+  - analysis-template.yaml
+  - station-reservation-service.yaml
+  - billing-wallet-service.yaml
+  - energy-dispatch-service.yaml
+  - graphql-gateway.yaml
+  - gateway-nodeport.yaml
+  - frontend.yaml
+  - ingress.yaml
+# Sin sufijo hash: los Rollouts (CRD de Argo) referencian el ConfigMap por nombre fijo.
+# Las flags NO viven aquí (están en DynamoDB), así que cambiarlas no requiere reiniciar pods.
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: aegisvolt-config
+    literals:
+      - AWS_ENDPOINT_URL=http://floci:4566
+      - AWS_REGION=us-east-1
+      - CLOUDWATCH_ENABLED=true
+      - STATION_SERVICE_URL=http://station-reservation-service:8000
+      - BILLING_SERVICE_URL=http://billing-wallet-service:8000
+      - DISPATCH_SERVICE_URL=http://energy-dispatch-service:8000
+      - SIM_SPEEDUP=60
+secretGenerator:
+  - name: aegisvolt-aws
+    literals:
+      - AWS_ACCESS_KEY_ID=test        # credenciales ficticias de Floci
+      - AWS_SECRET_ACCESS_KEY=test

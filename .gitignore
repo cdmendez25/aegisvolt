@@ -1,0 +1,25 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.xml
+
+# Terraform (el estado vive en S3; nunca en git)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+plan.txt
+crash.log
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Varios
+.env
+.DS_Store
+schema.graphql

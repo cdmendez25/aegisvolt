@@ -1,0 +1,30 @@
+# Clúster local que reemplaza a EKS. Un namespace por ambiente: aegisvolt-dev|test|prod.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: aegisvolt
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+      - |
+        kind: KubeletConfiguration
+        maxPods: 250
+    extraPortMappings:
+      # Ingress HTTP/HTTPS -> http://dev.aegisvolt.localhost, test..., prod...
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+      # NodePorts del gateway GraphQL por ambiente (los usa el API Gateway / NLB)
+      - containerPort: 30081
+        hostPort: 30081
+      - containerPort: 30082
+        hostPort: 30082
+      - containerPort: 30083
+        hostPort: 30083
