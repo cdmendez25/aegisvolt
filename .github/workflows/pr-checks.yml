@@ -76,7 +76,9 @@ jobs:
         run: |
           terraform fmt -check -recursive infra
           terraform -chdir=infra/live init -backend=false -input=false
-          terraform -chdir=infra/live validate
+          # El workspace "default" está prohibido a propósito (no existe en env_config):
+          # se valida la configuración tal como la verá cada ambiente.
+          for ws in dev test prod; do TF_WORKSPACE=$ws terraform -chdir=infra/live validate; done
 
   unit-tests:
     name: unit-tests
