@@ -1,5 +1,3 @@
-"""Lógica de negocio e idempotencia de cada microservicio (DynamoDB simulado con moto)."""
-
 from conftest import set_flag
 
 RESERVE = {"saga_id": "saga-1", "station_id": "BOG-01", "connector_id": "C1", "fleet_id": "FLEET-A"}
@@ -10,7 +8,6 @@ def connector_status(api, cid="C1"):
     return next(c for c in st["connectors"] if c["connector_id"] == cid)
 
 
-# ---------------------------------------------------------- reservas
 def test_reserve_locks_connector(reservation_api):
     r = reservation_api.post("/reservations", json=RESERVE)
     assert r.status_code == 201 and r.json()["status"] == "RESERVED"
@@ -48,7 +45,6 @@ def test_release_never_frees_connector_of_another_saga(reservation_api):
     reservation_api.post("/reservations", json=RESERVE)
     reservation_api.post("/reservations/saga-1/release", json={})
     reservation_api.post("/reservations", json={**RESERVE, "saga_id": "saga-2"})
-    # compensación tardía/duplicada de saga-1 NO debe liberar el conector de saga-2
     reservation_api.post("/reservations/saga-1/release", json={})
     assert connector_status(reservation_api)["reserved_by"] == "saga-2"
 
@@ -64,7 +60,6 @@ def test_ultra_connector_requires_boost_flag(reservation_api):
     assert reservation_api.post("/reservations", json=body).status_code == 201
 
 
-# ---------------------------------------------------------- billing
 CHARGE = {"saga_id": "saga-1", "fleet_id": "FLEET-A", "energy_kwh": 40, "connector_type": "FAST"}
 
 
@@ -74,7 +69,7 @@ def balance(api, fleet="FLEET-A"):
 
 def test_charge_deducts_balance(billing_api):
     r = billing_api.post("/charges", json=CHARGE)
-    assert r.status_code == 201 and r.json()["amount"] == 12.0  # 0.30 * 40, surge OFF
+    assert r.status_code == 201 and r.json()["amount"] == 12.0
     assert balance(billing_api) == 88.0
 
 
@@ -114,12 +109,11 @@ def test_surge_flag_changes_price_without_redeploy(billing_api):
     set_flag("ENABLE_DYNAMIC_SURGE_PRICING", True)
     import billing_wallet.app as m
 
-    m.flags._loaded_at = 0  # simula expiración del TTL de 3 s
+    m.flags._loaded_at = 0
     q2 = billing_api.get("/pricing/quote", params={"connector_type": "FAST", "energy_kwh": 40}).json()
     assert q1["amount"] == 12.0 and q2["amount"] == 18.0 and q2["multiplier"] == 1.5
 
 
-# ---------------------------------------------------------- dispatch
 SESSION = {
     "saga_id": "saga-1",
     "station_id": "BOG-01",
@@ -139,7 +133,6 @@ def test_hardware_fault_flag_fails_step3(dispatch_api):
     set_flag("SIMULATE_CHARGER_HARDWARE_FAULT", True)
     r = dispatch_api.post("/sessions", json=SESSION)
     assert r.status_code == 422 and r.json()["code"] == "CHARGER_HARDWARE_FAULT"
-    # reintento idempotente devuelve el mismo fallo, no crea otra sesión
     again = dispatch_api.post("/sessions", json=SESSION)
     assert again.status_code == 422 and again.json()["idempotent"] is True
     assert dispatch_api.get("/sessions/saga-1").json()["status"] == "FAILED"

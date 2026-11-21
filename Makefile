@@ -1,4 +1,3 @@
-# AegisVolt — comandos frecuentes.  `make help` para ver la lista.
 SHELL := /bin/bash
 ENV ?= dev
 TAG ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo local)
@@ -8,14 +7,12 @@ TF  := terraform -chdir=infra/live
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n",$$1,$$2}'
 
-# ---------------- plataforma local ----------------
 up: ## Levanta Floci, el clúster kind (ingress + Argo Rollouts) y Prefect
 	./scripts/floci-up.sh && ./scripts/cluster-up.sh && ./scripts/prefect-up.sh
 
 bootstrap: ## Crea el bucket S3 versionado de los tfstate (una sola vez)
 	terraform -chdir=infra/bootstrap init -input=false && terraform -chdir=infra/bootstrap apply -auto-approve
 
-# ---------------- infraestructura ----------------
 tf-init: ## terraform init del módulo raíz (backend S3)
 	$(TF) init -input=false
 
@@ -30,7 +27,6 @@ tf-state-versions: ## Lista las versiones (backups) del tfstate de ENV en S3
 	  --prefix "env:/$(ENV)/aegisvolt/terraform.tfstate" \
 	  --query 'Versions[?ends_with(Key,`.tfstate`)].[VersionId,LastModified,IsLatest,Size]' --output table
 
-# ---------------- build / deploy ----------------
 build: ## Construye las imágenes Docker con TAG
 	./scripts/build-images.sh $(TAG)
 
@@ -40,7 +36,6 @@ deploy: build ## Build + despliegue canary en ENV  (make deploy ENV=test)
 rollouts: ## Estado de los Rollouts canary en ENV
 	kubectl -n aegisvolt-$(ENV) get rollouts.argoproj.io,analysisruns.argoproj.io
 
-# ---------------- pruebas ----------------
 lint: ## Ruff + formato + type-check del frontend + terraform fmt
 	uv run ruff check services tests scripts observability && uv run ruff format --check services tests
 	cd frontend && npm run lint
@@ -55,7 +50,6 @@ test-integration: ## Pruebas de integración contra Floci
 test-e2e: ## Pruebas E2E contra el ambiente desplegado ENV
 	E2E_ENV=$(ENV) APIGW_URL="$$($(TF) output -raw api_gateway_invoke_url)" uv run pytest tests/e2e -m e2e -v
 
-# ---------------- demos para la sustentación ----------------
 demo-fault-on: ## Activa SIMULATE_CHARGER_HARDWARE_FAULT en ENV (sin redeploy)
 	AWS_PROFILE=floci aws dynamodb update-item --table-name aegisvolt-flags-$(ENV) \
 	  --key '{"flag_name":{"S":"SIMULATE_CHARGER_HARDWARE_FAULT"}}' \

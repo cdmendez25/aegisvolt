@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""Rastrea una SAGA en CloudWatch Logs por su correlation_id.
-
-Busca en los 4 grupos /aegisvolt/<env>/<servicio> con un filtro JSON
-{ $.correlation_id = "<id>" } y muestra la línea de tiempo unificada.
-
-Uso:  uv run scripts/trace_saga.py <correlation_id> [--env dev]
-"""
 
 import argparse
 import json

@@ -1,10 +1,3 @@
-# -----------------------------------------------------------------------------
-# MÓDULO OBSERVABILITY  —  CloudWatch por ambiente
-#   Log groups:  /aegisvolt/<env>/<servicio>
-#   Metric filters sobre los logs JSON (level, event, correlation_id)
-#   Alarmas usadas como señal de salud del canary
-# -----------------------------------------------------------------------------
-
 terraform {
   required_providers {
     aws = { source = "hashicorp/aws" }
@@ -22,7 +15,6 @@ resource "aws_cloudwatch_log_group" "service" {
   tags              = merge(var.tags, { Service = each.key })
 }
 
-# Cuenta los logs con level=ERROR de cada microservicio
 resource "aws_cloudwatch_log_metric_filter" "errors" {
   for_each       = toset(var.services)
   name           = "${var.project}-${var.env}-${each.key}-errors"
@@ -33,14 +25,12 @@ resource "aws_cloudwatch_log_metric_filter" "errors" {
     name      = "LogErrors"
     namespace = local.namespace
     value     = "1"
-    # (un filtro con dimensiones no admite default_value)
     dimensions = {
       Service = "$.service"
     }
   }
 }
 
-# Cuenta las SAGAs compensadas (rollback distribuido)
 resource "aws_cloudwatch_log_metric_filter" "saga_compensated" {
   name           = "${var.project}-${var.env}-saga-compensated"
   log_group_name = aws_cloudwatch_log_group.service["graphql-gateway"].name
@@ -67,9 +57,6 @@ resource "aws_cloudwatch_log_metric_filter" "saga_compensation_failed" {
   }
 }
 
-# Alarma: tasa de errores HTTP 5xx de cada servicio (métrica publicada por los
-# propios pods con la dimensión Version=stable|canary). El análisis canary
-# evalúa la misma métrica para la versión canary.
 resource "aws_cloudwatch_metric_alarm" "http_5xx" {
   for_each            = toset(var.services)
   alarm_name          = "${var.project}-${var.env}-${each.key}-5xx"

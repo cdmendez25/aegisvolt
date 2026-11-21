@@ -1,19 +1,3 @@
-"""billing-wallet-service
-
-Dueño ÚNICO de la tabla aegisvolt-billing-<env>.
-PASO 2 de la SAGA (cobro) y su transacción compensatoria (reembolso).
-
-Modelo:
-  pk=WALLET#<fleet> sk=META               -> billetera (balance)
-  pk=WALLET#<fleet> sk=TX#<saga>#CHARGE   -> cobro (status CAPTURED|REFUNDED)
-  pk=WALLET#<fleet> sk=TX#<saga>#REFUND   -> reembolso (evento de reversión)
-  pk=WALLET#<fleet> sk=TX#<saga>#REJECTED -> intento rechazado (fondos insuficientes)
-
-IDEMPOTENCIA: la clave del movimiento es (saga_id, tipo). La escritura usa
-attribute_not_exists, así que un cobro o reembolso repetido NUNCA se aplica dos
-veces: la transacción DynamoDB se cancela y se devuelve el resultado original.
-"""
-
 import os
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -137,13 +121,12 @@ def _get_tx(fleet_id: str, saga_id: str, kind: str) -> dict | None:
 
 @app.post("/charges", status_code=201)
 def charge(req: ChargeRequest):
-    """PASO 2: descuenta el saldo estimado de la billetera de la flota."""
     existing = _get_tx(req.fleet_id, req.saga_id, "CHARGE")
     if existing:
         log.info("Cobro repetido (idempotente)", extra={"event": "CHARGE_IDEMPOTENT_HIT"})
         return _tx_out(existing)
 
-    get_wallet(req.fleet_id)  # 404 si no existe
+    get_wallet(req.fleet_id)
     try:
         q = quote(req.connector_type, req.energy_kwh, flags.is_enabled(SURGE_PRICING), datetime.now(UTC), PEAK)
     except ValueError as exc:
@@ -185,7 +168,6 @@ def charge(req: ChargeRequest):
             raise
         reasons = [r.get("Code") for r in exc.response.get("CancellationReasons", [])]
         if reasons and reasons[0] == "ConditionalCheckFailed":
-            # Carrera: otra petición con la misma saga ya cobró
             return _tx_out(_get_tx(req.fleet_id, req.saga_id, "CHARGE"))
         table().put_item(
             Item={
@@ -219,12 +201,6 @@ def charge(req: ChargeRequest):
 
 @app.post("/charges/{saga_id}/refund")
 def refund(saga_id: str, req: RefundRequest):
-    """TRANSACCIÓN COMPENSATORIA: reembolsa el cobro y registra el evento de reversión.
-
-    Idempotente:
-      - Si no hubo cobro para la saga  => NOOP (nada que reembolsar)
-      - Si ya existe el REFUND        => devuelve el mismo reembolso (no reembolsa 2 veces)
-    """
     charge_tx = _get_tx(req.fleet_id, saga_id, "CHARGE")
     if not charge_tx:
         log.info("Reembolso sin cobro previo: no-op", extra={"event": "REFUND_NOOP", "saga_id": saga_id})
@@ -285,7 +261,6 @@ def refund(saga_id: str, req: RefundRequest):
         )
     except ClientError as exc:
         if exc.response["Error"]["Code"] == "TransactionCanceledException":
-            # Otra petición concurrente ya reembolsó: devolver ese resultado
             done = _get_tx(req.fleet_id, saga_id, "REFUND")
             if done:
                 return {**_tx_out(done), "idempotent": True}

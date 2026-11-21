@@ -1,10 +1,3 @@
-"""Pruebas de INTEGRACIÓN contra DynamoDB real (Floci en localhost:4566).
-
-Crea tablas efímeras aegisvolt-<tabla>-it<hash> (mismo esquema que Terraform),
-levanta los 4 microservicios EN PROCESO y conecta el gateway GraphQL con ellos
-mediante httpx.ASGITransport (HTTP real, sin puertos). Al final borra las tablas.
-"""
-
 import os
 import uuid
 
@@ -81,13 +74,34 @@ def _seed():
         ddb.put_item(TableName=f"aegisvolt-{table}-{ENV}", Item={k: ser.serialize(v) for k, v in item.items()})
 
     for cid, ctype, kw in [("C1", "FAST", 50), ("C2", "FAST", 50), ("C3", "ULTRA", 350)]:
-        put("reservations", {
-            "pk": "STATION#IT-01", "sk": f"CONNECTOR#{cid}", "entity": "CONNECTOR", "station_id": "IT-01",
-            "station_name": "Estación Integración", "city": "Bogotá", "connector_id": cid, "type": ctype,
-            "power_kw": kw, "status": "AVAILABLE"})  # fmt: skip
+        put(
+            "reservations",
+            {
+                "pk": "STATION#IT-01",
+                "sk": f"CONNECTOR#{cid}",
+                "entity": "CONNECTOR",
+                "station_id": "IT-01",
+                "station_name": "Estación Integración",
+                "city": "Bogotá",
+                "connector_id": cid,
+                "type": ctype,
+                "power_kw": kw,
+                "status": "AVAILABLE",
+            },
+        )
     for fleet, bal in [("FLEET-IT", 200), ("FLEET-BROKE", 1)]:
-        put("billing", {"pk": f"WALLET#{fleet}", "sk": "META", "entity": "WALLET", "fleet_id": fleet,
-                        "name": fleet, "balance": bal, "currency": "USD"})  # fmt: skip
+        put(
+            "billing",
+            {
+                "pk": f"WALLET#{fleet}",
+                "sk": "META",
+                "entity": "WALLET",
+                "fleet_id": fleet,
+                "name": fleet,
+                "balance": bal,
+                "currency": "USD",
+            },
+        )
     for name in ("ENABLE_DYNAMIC_SURGE_PRICING", "ENABLE_FAST_CHARGE_BOOST", "SIMULATE_CHARGER_HARDWARE_FAULT"):
         put("flags", {"flag_name": name, "enabled": False, "description": name})
 
@@ -123,7 +137,7 @@ def gateway(floci_tables):
     )
     gw.app.state.deps = gw.build_deps(services)
     for m in (reservation, billing, dispatch, gw):
-        m.flags.ttl = 0  # leer flags siempre frescas en las pruebas
+        m.flags.ttl = 0
     return TestClient(gw.app)
 
 

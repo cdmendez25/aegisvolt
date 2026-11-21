@@ -1,5 +1,3 @@
-"""Fábrica de clientes AWS (apuntan a Floci si AWS_ENDPOINT_URL está definido)."""
-
 from functools import lru_cache
 
 import boto3

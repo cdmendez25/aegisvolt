@@ -1,14 +1,3 @@
-"""station-reservation-service
-
-Dueño ÚNICO de la tabla aegisvolt-reservations-<env>.
-Gestiona disponibilidad de conectores y su bloqueo temporal (paso 1 de la SAGA)
-y la liberación (transacción compensatoria).
-
-Modelo (single-table):
-  pk=STATION#<id>      sk=CONNECTOR#<id>   -> conector (status AVAILABLE|RESERVED|CHARGING)
-  pk=RESERVATION#<saga> sk=META            -> reserva (status RESERVED|CHARGING|RELEASED)
-"""
-
 from datetime import UTC, datetime
 
 from boto3.dynamodb.conditions import Attr
@@ -94,10 +83,8 @@ def get_reservation(saga_id: str):
 
 @app.post("/reservations", status_code=201)
 def reserve(req: ReserveRequest):
-    """PASO 1 de la SAGA: AVAILABLE -> RESERVED (atómico e idempotente)."""
     connector = _get_connector(req.station_id, req.connector_id)
 
-    # Feature flag: los conectores ULTRA solo se pueden reservar con el boost activo
     if connector["type"] == "ULTRA" and not flags.is_enabled(FAST_CHARGE_BOOST):
         raise BusinessError(
             "ULTRA_CHARGE_DISABLED",
@@ -130,7 +117,6 @@ def reserve(req: ReserveRequest):
         "updated_at": ts,
     }
     try:
-        # Transacción local: bloquear conector + registrar reserva, o nada.
         ddb.transact_write_items(
             TransactItems=[
                 {
@@ -180,7 +166,6 @@ def reserve(req: ReserveRequest):
 
 @app.post("/reservations/{saga_id}/confirm")
 def confirm(saga_id: str):
-    """Tras activar la carga: RESERVED -> CHARGING."""
     r = _get_reservation(saga_id)
     if not r:
         raise BusinessError("RESERVATION_NOT_FOUND", "Reserva no encontrada", 404)
@@ -212,13 +197,6 @@ def confirm(saga_id: str):
 
 @app.post("/reservations/{saga_id}/release")
 def release(saga_id: str, req: ReleaseRequest | None = None):
-    """TRANSACCIÓN COMPENSATORIA (o fin de carga): libera el conector -> AVAILABLE.
-
-    Idempotente: procesarla 2 veces no cambia nada la segunda vez.
-      - Si nunca hubo reserva para esta saga => NOOP (no hay nada que compensar)
-      - Si ya está RELEASED                  => NOOP
-      - Solo libera el conector si reserved_by == saga_id (nunca libera el de otra SAGA)
-    """
     reason = (req.reason if req else "COMPENSATION").upper()
     r = _get_reservation(saga_id)
     if not r:
@@ -253,7 +231,6 @@ def release(saga_id: str, req: ReleaseRequest | None = None):
             ReturnValues="ALL_NEW",
         )["Attributes"]
     except ClientError as exc:
-        # Otra petición concurrente ya la liberó: resultado idempotente
         if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return {**_get_reservation(saga_id), "idempotent": True}
         raise

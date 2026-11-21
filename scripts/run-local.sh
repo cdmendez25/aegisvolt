@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Corre los 4 microservicios como procesos locales contra Floci (ambiente ENV, default dev).
-# Útil para desarrollo rápido sin Kubernetes.  Ctrl+C detiene todo.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export ENV="${ENV:-dev}" AWS_ENDPOINT_URL="${AWS_ENDPOINT_URL:-http://localhost:4566}" \

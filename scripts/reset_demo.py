@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Deja un ambiente listo para la demo: libera conectores y restaura saldos semilla.
-
-NO borra el historial de SAGAs ni de transacciones (sirve como evidencia).
-Uso:  uv run scripts/reset_demo.py dev
-"""
 
 import sys
 from decimal import Decimal
@@ -25,7 +20,6 @@ def main(env: str) -> None:
         aws_access_key_id="test",
         aws_secret_access_key="test",
     )
-    # 1) Cargas en curso: se finalizan por la API (dispatch stop + liberar conector + saga FINISHED)
     sagas = ddb.Table(f"aegisvolt-sagas-{env}")
     charging = sagas.query(IndexName="by_status", KeyConditionExpression=Key("status").eq("CHARGING"))["Items"]
     for s in charging:
@@ -39,7 +33,6 @@ def main(env: str) -> None:
         )
     print(f"[{env}] cargas finalizadas: {len(charging)}")
 
-    # 2) Cualquier conector que siga bloqueado se libera directamente
     res = ddb.Table(f"aegisvolt-reservations-{env}")
     freed = 0
     for c in res.scan(FilterExpression=Attr("entity").eq("CONNECTOR"))["Items"]:

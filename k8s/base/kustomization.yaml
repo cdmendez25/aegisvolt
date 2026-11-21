@@ -11,8 +11,6 @@ resources:
   - gateway-nodeport.yaml
   - frontend.yaml
   - ingress.yaml
-# Sin sufijo hash: los Rollouts (CRD de Argo) referencian el ConfigMap por nombre fijo.
-# Las flags NO viven aquí (están en DynamoDB), así que cambiarlas no requiere reiniciar pods.
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
@@ -28,5 +26,5 @@ configMapGenerator:
 secretGenerator:
   - name: aegisvolt-aws
     literals:
-      - AWS_ACCESS_KEY_ID=test        # credenciales ficticias de Floci
+      - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test

@@ -1,5 +1,3 @@
-// Cliente GraphQL mínimo: el endpoint es relativo (/graphql), así que cada
-// ambiente (dev/test/prod) habla con SU propio gateway a través del Ingress.
 export const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_URL ?? "/graphql";
 
 export async function gql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
