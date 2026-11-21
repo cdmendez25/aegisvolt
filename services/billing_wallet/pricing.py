@@ -1,5 +1,3 @@
-"""Cálculo de tarifas (lógica pura, sin I/O => fácil de probar unitariamente)."""
-
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -12,7 +10,6 @@ TZ = ZoneInfo(os.environ.get("PRICING_TZ", "America/Bogota"))
 
 
 def parse_peak_hours(spec: str) -> tuple[int, int]:
-    """'17-21' => (17, 21): horas pico [inicio, fin). '0-24' => todo el día."""
     start, end = (int(x) for x in spec.split("-"))
     if not (0 <= start < end <= 24):
         raise ValueError(f"Ventana pico inválida: {spec}")

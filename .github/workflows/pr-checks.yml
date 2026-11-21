@@ -1,13 +1,3 @@
-# =============================================================================
-# CHECKS PRE-MERGE  (obligatorios por las reglas de las ramas dev / test / prod)
-#
-#   promotion-guard    -> exige la cadena feature/* -> dev -> test -> prod
-#   lint-build         -> ruff, GraphQL schema, frontend, imágenes Docker, terraform validate
-#   unit-tests         -> lógica de negocio y compensaciones SAGA (moto, sin red)
-#   integration-tests  -> GraphQL + microservicios contra DynamoDB real (Floci)
-#   e2e-tests          -> stack efímero completo: Floci + Terraform + kind + Argo + E2E
-#   terraform-plan     -> plan del WORKSPACE = rama destino, sobre el estado real en S3
-# =============================================================================
 name: pr-checks
 
 on:
@@ -76,8 +66,6 @@ jobs:
         run: |
           terraform fmt -check -recursive infra
           terraform -chdir=infra/live init -backend=false -input=false
-          # El workspace "default" está prohibido a propósito (no existe en env_config):
-          # se valida la configuración tal como la verá cada ambiente.
           for ws in dev test prod; do TF_WORKSPACE=$ws terraform -chdir=infra/live validate; done
 
   unit-tests:
@@ -153,14 +141,13 @@ jobs:
 
   terraform-plan:
     name: terraform-plan
-    # El estado real (S3 versionado) vive en Floci, en la máquina del runner self-hosted
     runs-on: [self-hosted, aegisvolt]
     steps:
       - uses: actions/checkout@v4
       - name: Seleccionar workspace = rama destino del PR
         id: ws
         run: |
-          WS="${{ github.base_ref }}"            # dev | test | prod
+          WS="${{ github.base_ref }}"
           echo "workspace=$WS" >> "$GITHUB_OUTPUT"
           terraform -chdir=infra/live init -input=false
           terraform -chdir=infra/live workspace select "$WS"
@@ -174,7 +161,7 @@ jobs:
           code=$?
           cat plan.txt
           echo "exitcode=$code" >> "$GITHUB_OUTPUT"
-          [[ $code -eq 1 ]] && exit 1 || exit 0     # 0 = sin cambios, 2 = hay cambios
+          [[ $code -eq 1 ]] && exit 1 || exit 0
       - uses: actions/upload-artifact@v4
         with:
           name: tfplan-${{ steps.ws.outputs.workspace }}

@@ -1,12 +1,4 @@
 #!/usr/bin/env bash
-# Crea un RULESET de GitHub que protege dev, test y prod:
-#   - non_fast_forward      => PROHÍBE git push --force
-#   - pull_request          => PROHÍBE el push directo: todo entra por Pull Request
-#   - required_status_checks=> checks de CI en verde antes de habilitar el merge
-#   - deletion              => no se pueden borrar las ramas
-# Sin "bypass_actors": la regla aplica también al dueño/administrador del repo.
-#
-# Uso: scripts/github/protect-branches.sh <owner>/<repo>
 set -euo pipefail
 REPO="${1:?uso: protect-branches.sh <owner>/<repo>}"
 

@@ -1,5 +1,3 @@
-"""Persistencia del log de SAGAs en aegisvolt-sagas-<env>."""
-
 from dataclasses import asdict, fields
 from decimal import Decimal
 

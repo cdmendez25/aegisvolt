@@ -1,16 +1,3 @@
-"""Análisis CANARY (lo ejecuta Argo Rollouts como Job en el paso `analysis`).
-
-Criterios para promover del 20% al 100%:
-  1. Health checks: N peticiones a /readyz y a un endpoint de negocio del servicio,
-     enviadas SOLO a los pods canary (Service <svc>-canary, que Argo apunta al hash nuevo).
-     Tasa de error sintética <= MAX_ERROR_RATE.
-  2. CloudWatch: métricas Http5xx / Requests con dimensiones {Service, Revision=<hash canary>}
-     en los últimos WINDOW_MINUTES. Tasa de 5xx <= MAX_ERROR_RATE.
-Si algo falla => exit 1 => AnalysisRun Failed => Argo ABORTA y vuelve al 100% stable (rollback).
-
-El resultado se registra en CloudWatch Logs: /aegisvolt/<env>/canary-analysis
-"""
-
 import json
 import os
 import sys
@@ -83,7 +70,7 @@ def main() -> int:
     )
 
     sent, probe_errors = synthetic_probes(base_url, service, n)
-    time.sleep(settle)  # los pods publican métricas cada 10 s
+    time.sleep(settle)
     try:
         cw_requests, cw_5xx = cloudwatch_error_rate(s, service, revision, window)
     except Exception as exc:
@@ -94,16 +81,25 @@ def main() -> int:
     cw_rate = (cw_5xx / cw_requests) if cw_requests else 0.0
     passed = probe_rate <= max_rate and cw_rate <= max_rate
     result = {
-        "target_service": service, "canary_hash": revision, "passed": passed, "threshold": max_rate,
-        "probe_requests": sent, "probe_errors": probe_errors, "probe_error_rate": round(probe_rate, 4),
-        "cloudwatch_requests": cw_requests, "cloudwatch_5xx": cw_5xx, "cloudwatch_error_rate": round(cw_rate, 4),
-    }  # fmt: skip
-    log.log(20 if passed else 40, "Canary APROBADO: se promueve al 100%" if passed
-            else "Canary RECHAZADO: rollback a la versión stable",
-            extra={"event": "CANARY_ANALYSIS_RESULT", **result})  # fmt: skip
+        "target_service": service,
+        "canary_hash": revision,
+        "passed": passed,
+        "threshold": max_rate,
+        "probe_requests": sent,
+        "probe_errors": probe_errors,
+        "probe_error_rate": round(probe_rate, 4),
+        "cloudwatch_requests": cw_requests,
+        "cloudwatch_5xx": cw_5xx,
+        "cloudwatch_error_rate": round(cw_rate, 4),
+    }
+    log.log(
+        20 if passed else 40,
+        "Canary APROBADO: se promueve al 100%" if passed else "Canary RECHAZADO: rollback a la versión stable",
+        extra={"event": "CANARY_ANALYSIS_RESULT", **result},
+    )
     for h in log.handlers + log.parent.handlers:
         h.flush()
-    time.sleep(3)  # dar tiempo al envío final a CloudWatch Logs
+    time.sleep(3)
     print(json.dumps(result))
     return 0 if passed else 1
 

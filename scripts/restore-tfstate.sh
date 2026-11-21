@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# Restaura una VERSIÓN ANTERIOR del tfstate de un workspace desde el bucket S3 versionado.
-#
-#   scripts/restore-tfstate.sh <env>                         -> lista versiones
-#   scripts/restore-tfstate.sh <env> <version-id>            -> inspecciona (dry-run)
-#   scripts/restore-tfstate.sh <env> <version-id> --apply    -> restaura
-#
-# Cómo funciona la restauración: se COPIA la versión vieja sobre la misma clave
-# (s3api copy-object con CopySource ?versionId=...). S3 crea una NUEVA versión "latest"
-# con el contenido antiguo; la versión corrupta NO se borra (queda como evidencia y
-# se puede volver a ella). Después se ejecuta `terraform plan` para ver la diferencia
-# entre ese estado restaurado y la infraestructura real.
 set -euo pipefail
 export AWS_PROFILE="${AWS_PROFILE:-floci}"
 ENV="${1:?uso: restore-tfstate.sh <env> [version-id] [--apply]}"
@@ -39,7 +28,6 @@ if [[ "$APPLY" != "--apply" ]]; then
   exit 0
 fi
 
-# Terraform rechaza un estado con serial menor al que ya conoce: se sube el serial
 python3 - "$TMP/old.tfstate" "$TMP/current.tfstate" <<'PY'
 import json, sys
 old, cur = (json.load(open(p)) for p in sys.argv[1:3])

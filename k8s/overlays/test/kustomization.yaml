@@ -1,4 +1,3 @@
-# Ambiente TEST: namespace, configuración y host propios.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: aegisvolt-test
@@ -10,9 +9,9 @@ configMapGenerator:
   - name: aegisvolt-config
     behavior: merge
     literals:
-      - ENV=test                       # => tablas aegisvolt-*-test y logs /aegisvolt/test/*
-      - PEAK_HOURS=0-24             # ventana de hora pico para la tarifa dinámica
-      - FLAG_ADMIN_ENABLED=true    # ¿se pueden cambiar flags desde la UI?
+      - ENV=test
+      - PEAK_HOURS=0-24
+      - FLAG_ADMIN_ENABLED=true
 patches:
   - target: {kind: Ingress, name: aegisvolt}
     patch: |-
@@ -24,7 +23,6 @@ patches:
       - op: replace
         path: /spec/ports/0/nodePort
         value: 30082
-# El pipeline fija aquí el tag de las imágenes que se despliegan (scripts/deploy.sh)
 images:
   - {name: aegisvolt/station-reservation-service, newTag: latest}
   - {name: aegisvolt/billing-wallet-service, newTag: latest}

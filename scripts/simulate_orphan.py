@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""Simula una SAGA HUÉRFANA: el orquestador "murió" justo después de cobrar (estado PAID).
-
-Deja datos reales a medio camino en las 3 tablas, con updated_at de hace 10 minutos:
-  - conector RESERVED por la saga + reserva RESERVED       (reservations)
-  - cobro CAPTURED y saldo descontado                       (billing)
-  - registro de saga en PAID                                (sagas)
-El flow de Prefect la detecta (estado no terminal > 2 min) y llama recoverSaga, que
-ejecuta las compensaciones idempotentes: reembolso + liberación del conector.
-
-Uso:  uv run scripts/simulate_orphan.py dev
-"""
 
 import sys
 import uuid

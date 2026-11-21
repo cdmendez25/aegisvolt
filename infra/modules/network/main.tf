@@ -1,10 +1,3 @@
-# -----------------------------------------------------------------------------
-# MÓDULO NETWORK
-# VPC dedicada por ambiente, 2 subredes públicas + 2 privadas (2 AZ),
-# tablas de ruteo separadas y VPC Endpoints para que el tráfico interno
-# (API Gateway <-> EKS, pods -> DynamoDB/S3/CloudWatch) NUNCA salga a internet.
-# -----------------------------------------------------------------------------
-
 terraform {
   required_providers {
     aws = { source = "hashicorp/aws" }
@@ -18,13 +11,11 @@ locals {
 
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr
-  enable_dns_support   = true # requerido para private DNS de Interface VPCE
+  enable_dns_support   = true
   enable_dns_hostnames = true
   tags                 = merge(var.tags, { Name = "${local.name}-vpc" })
 }
 
-# ---------------- Subredes -----------------
-# Públicas: 10.X.0.0/24, 10.X.1.0/24  (NAT, balanceadores públicos)
 resource "aws_subnet" "public" {
   count                   = 2
   vpc_id                  = aws_vpc.this.id
@@ -38,7 +29,6 @@ resource "aws_subnet" "public" {
   })
 }
 
-# Privadas: 10.X.10.0/24, 10.X.11.0/24  (nodos EKS, NLB interno, Interface VPCE)
 resource "aws_subnet" "private" {
   count             = 2
   vpc_id            = aws_vpc.this.id
@@ -51,7 +41,6 @@ resource "aws_subnet" "private" {
   })
 }
 
-# ---------------- Ruteo público -----------------
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
   tags   = merge(var.tags, { Name = "${local.name}-igw" })
@@ -74,11 +63,6 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# ---------------- Ruteo privado -----------------
-# Las subredes privadas NO tienen ruta a 0.0.0.0/0 vía IGW. Solo:
-#   - ruta local de la VPC (implícita)
-#   - prefix lists de S3 y DynamoDB (agregadas por los Gateway Endpoints)
-#   - NAT opcional (solo si se necesita salir a internet, ej. pull de imágenes)
 resource "aws_route_table" "private" {
   count  = 2
   vpc_id = aws_vpc.this.id
@@ -111,8 +95,6 @@ resource "aws_route" "private_nat" {
   nat_gateway_id         = aws_nat_gateway.this[0].id
 }
 
-# ---------------- Security Groups -----------------
-# SG de los Interface Endpoints: solo HTTPS desde dentro de la VPC
 resource "aws_security_group" "vpce" {
   name        = "${local.name}-vpce-sg"
   description = "Interface VPC endpoints: HTTPS solo desde la VPC"
@@ -136,8 +118,6 @@ resource "aws_security_group" "vpce" {
   tags = merge(var.tags, { Name = "${local.name}-vpce-sg" })
 }
 
-# SG de los nodos de Kubernetes: aceptan el NodePort del gateway GraphQL
-# solamente desde las subredes privadas (donde vive el NLB del VPC Link).
 resource "aws_security_group" "k8s_nodes" {
   name        = "${local.name}-k8s-nodes-sg"
   description = "Nodos EKS: NodePort GraphQL solo desde subredes privadas"
@@ -170,9 +150,6 @@ resource "aws_security_group" "k8s_nodes" {
   tags = merge(var.tags, { Name = "${local.name}-k8s-nodes-sg" })
 }
 
-# ---------------- VPC Endpoints -----------------
-# GATEWAY endpoints (S3 y DynamoDB): agregan una ruta con el prefix list del
-# servicio en las tablas de ruteo PRIVADAS. Sin costo, sin ENI.
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.this.id
   service_name      = "com.amazonaws.${var.region}.s3"
@@ -187,7 +164,6 @@ resource "aws_vpc_endpoint" "dynamodb" {
   vpc_endpoint_type = "Gateway"
   route_table_ids   = aws_route_table.private[*].id
 
-  # Política: este endpoint solo permite acceder a las tablas de ESTE ambiente
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -202,14 +178,12 @@ resource "aws_vpc_endpoint" "dynamodb" {
   tags = merge(var.tags, { Name = "${local.name}-vpce-dynamodb" })
 }
 
-# INTERFACE endpoints: crean ENIs con IP privada en las subredes privadas y,
-# con private_dns_enabled, el DNS público del servicio resuelve a esas IPs.
 locals {
   interface_endpoints = {
-    execute-api = "com.amazonaws.${var.region}.execute-api" # API Gateway privado
-    logs        = "com.amazonaws.${var.region}.logs"        # CloudWatch Logs
-    monitoring  = "com.amazonaws.${var.region}.monitoring"  # CloudWatch Metrics
-    sts         = "com.amazonaws.${var.region}.sts"         # IRSA de los pods
+    execute-api = "com.amazonaws.${var.region}.execute-api"
+    logs        = "com.amazonaws.${var.region}.logs"
+    monitoring  = "com.amazonaws.${var.region}.monitoring"
+    sts         = "com.amazonaws.${var.region}.sts"
   }
 }
 

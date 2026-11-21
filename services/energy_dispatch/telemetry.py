@@ -1,10 +1,3 @@
-"""Simulación física del cargador (lógica pura, testeable).
-
-Para la demo el tiempo corre acelerado: SIM_SPEEDUP=60 => 1 s real = 1 min de carga.
-Curva típica de carga DC: potencia casi plena hasta 80% de la energía objetivo,
-luego "tapering" al 40%.
-"""
-
 import math
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,7 +18,6 @@ class Reading:
 
 def reading(started_at: datetime, now: datetime, max_power_kw: float, target_kwh: float, speedup: float) -> Reading:
     elapsed_h = max((now - started_at).total_seconds(), 0) * speedup / 3600
-    # Energía con tapering: 0.95*P hasta 80% del objetivo, 0.4*P después
     full_phase_kwh = 0.8 * target_kwh
     p_full, p_taper = 0.95 * max_power_kw, 0.4 * max_power_kw
     t_full = full_phase_kwh / p_full
@@ -36,7 +28,6 @@ def reading(started_at: datetime, now: datetime, max_power_kw: float, target_kwh
         energy = min(target_kwh, full_phase_kwh + p_taper * (elapsed_h - t_full))
         power = p_taper if energy < target_kwh else 0.0
     completed = energy >= target_kwh - 1e-9
-    # Pequeña oscilación determinista para que la telemetría "se vea viva"
     wobble = 1 + 0.02 * math.sin(elapsed_h * 40)
     power = round(power * wobble, 2) if not completed else 0.0
     voltage = round(400 + 400 * min(energy / target_kwh, 1) * 0.5, 1)
