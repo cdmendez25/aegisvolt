@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# Despliegue CANARY de AegisVolt en Kubernetes para UN ambiente.
-#
-#   scripts/deploy.sh <dev|test|prod> <TAG>
-#
-# 1. Carga las imágenes :TAG en el clúster kind.
-# 2. Renderiza k8s/overlays/<env> fijando el tag y lo aplica.
-#    - Primer despliegue: Argo crea todo al 100% (no hay versión stable previa).
-#    - Despliegues siguientes: Argo Rollouts ejecuta el canary de cada microservicio:
-#        20% -> AnalysisRun (health + 5xx en CloudWatch) -> 60% -> 100%
-#      Si el análisis falla => Argo ABORTA y deja el 100% en la versión stable (rollback).
-# 3. Espera el resultado de los 4 Rollouts. Exit != 0 si alguno quedó Degraded (rollback).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

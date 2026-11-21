@@ -1,12 +1,4 @@
 #!/usr/bin/env bash
-# Demostración del CANARY con rollback automático.
-#
-#   scripts/canary-demo.sh fail [env] [servicio]   -> despliega una revisión DEFECTUOSA
-#   scripts/canary-demo.sh restore [env] [servicio] -> vuelve a la especificación sana
-#
-# "fail" agrega CANARY_SIMULATE_ERRORS=true al pod template => nueva revisión => Argo
-# manda el 20% a esa revisión => el AnalysisRun mide ~50% de 5xx (umbral 5%) => FALLA
-# => Argo ABORTA y deja el 100% del tráfico en la versión stable (rollback automático).
 set -euo pipefail
 ACTION="${1:?uso: canary-demo.sh fail|restore [env] [servicio]}"
 ENV="${2:-dev}"

@@ -1,8 +1,3 @@
-"""graphql-gateway: capa de agregación GraphQL + orquestador SAGA.
-
-Expone POST/GET /graphql (HTTP) y WS /graphql (subscriptions, graphql-transport-ws).
-"""
-
 import os
 from dataclasses import dataclass
 

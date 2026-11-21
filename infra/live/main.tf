@@ -35,16 +35,10 @@ provider "aws" {
   }
 }
 
-# -----------------------------------------------------------------------------
-# El AMBIENTE sale del WORKSPACE activo. No existe variable "env": así es
-# imposible aplicar la config de prod estando en el workspace test.
-# -----------------------------------------------------------------------------
 locals {
   project = "aegisvolt"
   env     = terraform.workspace
 
-  # Configuración por ambiente. Si el workspace no es dev/test/prod
-  # (ej. "default") el plan falla: no hay entrada en este mapa.
   env_config = {
     dev = {
       vpc_cidr          = "10.10.0.0/16"

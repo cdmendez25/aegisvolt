@@ -1,17 +1,3 @@
-"""energy-dispatch-service
-
-Dueño ÚNICO de la tabla aegisvolt-dispatch-<env>.
-PASO 3 de la SAGA: orden de activación física del cargador + telemetría.
-
-Modelo:
-  pk=SESSION#<saga> sk=META          -> sesión (ACTIVE|FAILED|COMPLETED)
-  pk=SESSION#<saga> sk=TEL#<epoch>   -> muestra de telemetría (cada 5 s)
-
-Si la flag SIMULATE_CHARGER_HARDWARE_FAULT está activa en el ambiente, el
-cargador "reporta" una falla física y el paso 3 falla => el orquestador dispara
-las compensaciones (reembolso + liberación del conector).
-"""
-
 import asyncio
 import os
 from contextlib import asynccontextmanager
@@ -87,7 +73,6 @@ def _get_session(saga_id: str) -> dict | None:
 
 @app.post("/sessions", status_code=201)
 def start_session(req: StartRequest):
-    """PASO 3: activación física del cargador (idempotente por saga_id)."""
     existing = _get_session(req.saga_id)
     if existing:
         if existing["status"] == "FAILED":
@@ -216,8 +201,6 @@ def telemetry(saga_id: str, limit: int = 60):
 
 
 def record_telemetry_once() -> int:
-    """Escribe una muestra por cada sesión ACTIVE. La clave TEL#<epoch redondeado>
-    hace que varias réplicas escriban la MISMA muestra (sin duplicados)."""
     active = table().scan(FilterExpression=Attr("entity").eq("SESSION") & Attr("status").eq("ACTIVE")).get("Items", [])
     bucket = int(now().timestamp() // TELEMETRY_INTERVAL * TELEMETRY_INTERVAL)
     for s in active:

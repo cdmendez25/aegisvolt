@@ -1,12 +1,10 @@
-# Gestión de disponibilidad y bloqueo de bahías de carga
-# Rollout = Deployment con estrategia CANARY gestionada por Argo Rollouts.
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
   name: station-reservation-service
   labels: {app: station-reservation-service, tier: backend}
 spec:
-  replicas: 5                 # 5 réplicas => setWeight 20 = 1 pod canary / 4 stable
+  replicas: 5
   revisionHistoryLimit: 3
   selector:
     matchLabels: {app: station-reservation-service}
@@ -25,7 +23,6 @@ spec:
           env:
             - name: POD_NAME
               valueFrom: {fieldRef: {fieldPath: metadata.name}}
-            # Hash de la revisión (stable vs canary): dimensión "Revision" de las métricas
             - name: POD_TEMPLATE_HASH
               valueFrom: {fieldRef: {fieldPath: "metadata.labels['rollouts-pod-template-hash']"}}
           readinessProbe:
@@ -44,14 +41,14 @@ spec:
             allowPrivilegeEscalation: false
   strategy:
     canary:
-      canaryService: station-reservation-service-canary   # Argo lo apunta SOLO a los pods nuevos (para el análisis)
-      stableService: station-reservation-service-stable   # y este SOLO a los pods estables
+      canaryService: station-reservation-service-canary
+      stableService: station-reservation-service-stable
       maxSurge: 1
       maxUnavailable: 0
       steps:
-        - setWeight: 20              # 1) 20% de las réplicas con la versión nueva
+        - setWeight: 20
         - pause: {duration: 10s}
-        - analysis:                  # 2) health checks + tasa 5xx en CloudWatch
+        - analysis:
             templates:
               - templateName: canary-health
             args:
@@ -60,12 +57,9 @@ spec:
               - name: canary-hash
                 valueFrom:
                   podTemplateHashValue: Latest
-        - setWeight: 60              # 3) análisis OK => 60% ...
+        - setWeight: 60
         - pause: {duration: 10s}
-        # 4) fin de los pasos => 100%. Si el análisis falla => abort => 100% stable (rollback)
 ---
-# Service principal: selecciona TODOS los pods (stable + canary) => el tráfico interno se
-# reparte según la proporción de réplicas (20% canary durante el análisis).
 apiVersion: v1
 kind: Service
 metadata:

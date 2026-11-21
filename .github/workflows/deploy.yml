@@ -1,19 +1,9 @@
-# =============================================================================
-# DESPLIEGUE POST-MERGE
-# Se dispara con el push que genera el MERGE de un PR en dev, test o prod.
-# El ambiente se determina DINÁMICAMENTE a partir de la rama destino:
-#     github.ref_name = dev  -> workspace dev  -> namespace aegisvolt-dev
-#     github.ref_name = test -> workspace test -> namespace aegisvolt-test
-#     github.ref_name = prod -> workspace prod -> namespace aegisvolt-prod
-# Luego: terraform apply (solo ese workspace) -> build -> CANARY en Kubernetes -> smoke E2E.
-# =============================================================================
 name: deploy
 
 on:
   push:
     branches: [dev, test, prod]
 
-# Nunca dos despliegues simultáneos al MISMO ambiente; ambientes distintos sí pueden correr.
 concurrency:
   group: deploy-${{ github.ref_name }}
   cancel-in-progress: false
@@ -25,7 +15,7 @@ jobs:
   deploy:
     name: deploy-${{ github.ref_name }}
     runs-on: [self-hosted, aegisvolt]
-    environment: ${{ github.ref_name }}   # environments de GitHub (prod puede exigir aprobación)
+    environment: ${{ github.ref_name }}
     env:
       TARGET_ENV: ${{ github.ref_name }}
     steps:

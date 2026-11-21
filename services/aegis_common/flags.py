@@ -1,10 +1,3 @@
-"""Cliente de Feature Flags guardadas en DynamoDB (tabla aegisvolt-flags-<env>).
-
-Cada ambiente tiene SU tabla => estado independiente por ambiente.
-Las flags se leen en caliente con un caché corto (TTL), así que cambiar una flag
-en DynamoDB cambia el comportamiento en segundos SIN redesplegar.
-"""
-
 import logging
 import time
 from dataclasses import dataclass
@@ -57,7 +50,6 @@ class FlagClient:
             }
             self._loaded_at = time.monotonic()
         except Exception:
-            # Fail-safe: si no se puede leer, se conserva el último valor conocido
             log.exception("No se pudieron leer las feature flags", extra={"event": "FLAGS_READ_ERROR"})
 
     def is_enabled(self, name: str) -> bool:
@@ -80,6 +72,6 @@ class FlagClient:
             ExpressionAttributeValues={":e": enabled, ":t": now, ":u": updated_by},
             ReturnValues="ALL_NEW",
         )
-        self._loaded_at = 0.0  # invalida caché
+        self._loaded_at = 0.0
         i = resp["Attributes"]
         return Flag(i["flag_name"], bool(i["enabled"]), i.get("description", ""), now, updated_by)

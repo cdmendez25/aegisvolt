@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Crea (idempotente) el clúster kind "aegisvolt" con:
-#   - ingress-nginx  (entrada HTTP por host: dev|test|prod.aegisvolt.localhost)
-#   - Argo Rollouts  (estrategia Canary + AnalysisTemplates)
-#   - namespaces aegisvolt-dev|test|prod
-#   - Floci conectado a la red docker "kind" (los pods lo ven como http://floci:4566)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -16,7 +11,6 @@ if ! kind get clusters 2>/dev/null | grep -qx aegisvolt; then
 fi
 kubectl config use-context kind-aegisvolt >/dev/null
 
-# Floci dentro de la red de kind
 ./scripts/floci-up.sh
 
 echo "==> ingress-nginx ${INGRESS_VERSION}"

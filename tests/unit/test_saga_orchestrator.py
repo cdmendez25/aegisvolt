@@ -1,9 +1,3 @@
-"""Pruebas unitarias del orquestador SAGA con dobles de prueba (sin red ni AWS).
-
-Verifican el ORDEN de las compensaciones, los reintentos, la idempotencia y la
-recuperación de SAGAs huérfanas.
-"""
-
 import copy
 
 import pytest
@@ -22,15 +16,12 @@ TIMEOUT = StepResult(ok=False, uncertain=True, error_code="SERVICE_UNREACHABLE",
 
 
 class FakeClient:
-    """Responde según un guion {(method, path_prefix): [respuestas...]} y registra las llamadas."""
-
     def __init__(self, name: str, journal: list, script: dict):
         self.name, self.journal, self.script = name, journal, script
 
     async def call(self, method, path, correlation_id, **kwargs):
         self.journal.append((self.name, method, path, correlation_id))
         for (m, key), responses in self.script.items():
-            # "/reservations" coincide exacto; "/release", "/refund"... coinciden por sufijo
             if m == method and (path == key or (path.endswith(key) and path.count("/") > 1)):
                 return responses.pop(0) if len(responses) > 1 else responses[0]
         raise AssertionError(f"llamada inesperada {self.name} {method} {path}")
@@ -105,7 +96,6 @@ async def test_step3_failure_refunds_then_releases_in_reverse_order():
     saga = await orch.reserve_and_start_charging(CMD)
     assert saga.status == "COMPENSATED"
     assert saga.failed_step == "START_CHARGING" and saga.error_code == "CHARGER_HARDWARE_FAULT"
-    # Orden inverso: primero billing (refund), luego reservas (release)
     assert calls(journal)[-2:] == ["billing:refund", "reservation:release"]
     comp = [s["name"] for s in saga.steps if s["action"] == "COMPENSATE"]
     assert comp == ["REFUND_WALLET", "RELEASE_CONNECTOR"]
@@ -115,7 +105,7 @@ async def test_step2_insufficient_funds_only_releases_connector():
     orch, journal, _ = make(billing={("POST", "/charges"): [NO_FUNDS], ("POST", "/refund"): [OK]})
     saga = await orch.reserve_and_start_charging(CMD)
     assert saga.status == "COMPENSATED" and saga.error_code == "INSUFFICIENT_FUNDS"
-    assert "billing:refund" not in calls(journal)  # el cobro nunca ocurrió: no se reembolsa
+    assert "billing:refund" not in calls(journal)
     assert calls(journal)[-1] == "reservation:release"
     assert not any(c.startswith("dispatch") for c in calls(journal))
 
@@ -154,7 +144,6 @@ async def test_compensation_exhausted_marks_compensation_failed():
     assert saga.status == "COMPENSATION_FAILED"
     refund = next(s for s in saga.steps if s["name"] == "REFUND_WALLET")
     assert refund["status"] == "FAILED" and refund["attempts"] == 3
-    # Aun así se intenta liberar el conector (no se abandona el resto)
     assert any(s["name"] == "RELEASE_CONNECTOR" and s["status"] == "SUCCEEDED" for s in saga.steps)
 
 
@@ -165,7 +154,7 @@ async def test_same_idempotency_key_returns_same_saga_without_side_effects():
     n_calls = len(journal)
     second = await orch.reserve_and_start_charging(cmd)
     assert first.saga_id == second.saga_id == saga_id_for("retry-123")
-    assert len(journal) == n_calls  # el reintento NO volvió a llamar a ningún servicio
+    assert len(journal) == n_calls
 
 
 async def test_correlation_id_is_the_saga_id_in_every_call():

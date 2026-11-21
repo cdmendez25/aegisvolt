@@ -1,7 +1,3 @@
-"""Fábrica de aplicaciones FastAPI con lo transversal ya resuelto:
-logging JSON, correlation_id, métricas, health/readiness y errores de negocio.
-"""
-
 import logging
 import random
 import time
@@ -21,11 +17,6 @@ CORRELATION_HEADER = "X-Correlation-ID"
 
 
 class BusinessError(Exception):
-    """Error de negocio esperado (fondos insuficientes, conector ocupado...).
-
-    Se responde con 4xx y un `code` estable que el orquestador SAGA interpreta.
-    """
-
     def __init__(self, code: str, message: str, status_code: int = 409, **details):
         super().__init__(message)
         self.code = code
@@ -55,7 +46,6 @@ def create_app(
         token = correlation_id_var.set(cid)
         start = time.perf_counter()
         try:
-            # Fallo simulado por despliegue: demuestra que el canary detecta errores y hace rollback
             if settings.canary_simulate_errors and request.url.path not in ("/healthz",):
                 if random.random() < 0.5:
                     response = JSONResponse(status_code=500, content={"code": "SIMULATED_CANARY_ERROR"})
@@ -97,12 +87,10 @@ def create_app(
 
     @app.get("/healthz", tags=["ops"])
     async def healthz():
-        """Liveness: el proceso responde."""
         return {"status": "ok", "service": service_name, "env": settings.env, "version": settings.app_version}
 
     @app.get("/readyz", tags=["ops"])
     async def readyz():
-        """Readiness: el servicio alcanza SUS tablas en DynamoDB."""
         ddb = dynamodb_client(settings.aws_region, settings.aws_endpoint_url)
         checked = []
         for logical in readiness_tables or []:

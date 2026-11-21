@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Levanta Prefect Server (dashboard http://localhost:4200) y el proceso que sirve el flow
-# "aegisvolt-observability" programado cada 5 minutos. Ambos en la red docker "kind"
-# para alcanzar Floci (http://floci:4566) y los NodePorts de los gateways.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

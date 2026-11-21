@@ -1,20 +1,3 @@
-"""Flujos de observabilidad de AegisVolt en Prefect.
-
-Flow `aegisvolt-observability` (programado cada 5 min):
-  Para cada ambiente (dev, test, prod) ejecuta en paralelo:
-    1. check_environment_health  -> /healthz y /readyz del gateway + query GraphQL + tablas DynamoDB
-    2. audit_saga_consistency    -> recorre aegisvolt-sagas-<env> y CRUZA con las tablas de cada
-                                    microservicio para verificar que las compensaciones dejaron
-                                    los datos consistentes; detecta SAGAs huérfanas
-    3. recover_orphan_sagas      -> (opcional) dispara recoverSaga para las huérfanas
-    4. publish_metrics           -> métricas a CloudWatch (AegisVolt/<env>) + log en
-                                    /aegisvolt/<env>/prefect-observability
-  y publica artifacts (tablas y markdown) visibles en el dashboard de Prefect.
-
-Ejecutar una vez:   uv run --group prefect python observability/prefect/flows.py run
-Servir programado:  uv run --group prefect python observability/prefect/flows.py serve
-"""
-
 import json
 import os
 import sys
@@ -31,7 +14,6 @@ from prefect.artifacts import create_markdown_artifact, create_table_artifact
 from prefect.futures import wait
 
 AWS_ENDPOINT = os.environ.get("AWS_ENDPOINT_URL", "http://localhost:4566")
-# URL del gateway por ambiente. Default: NodePort del nodo kind expuesto en el host.
 GATEWAY_URLS = {
     "dev": os.environ.get("GATEWAY_URL_DEV", "http://localhost:30081"),
     "test": os.environ.get("GATEWAY_URL_TEST", "http://localhost:30082"),
@@ -41,8 +23,9 @@ IN_FLIGHT = {"STARTED", "RESERVED", "PAID", "COMPENSATING"}
 
 
 def _aws(kind: str, service: str):
-    kw = dict(endpoint_url=AWS_ENDPOINT, region_name="us-east-1", aws_access_key_id="test",
-              aws_secret_access_key="test")  # fmt: skip
+    kw = dict(
+        endpoint_url=AWS_ENDPOINT, region_name="us-east-1", aws_access_key_id="test", aws_secret_access_key="test"
+    )
     return boto3.resource(service, **kw) if kind == "resource" else boto3.client(service, **kw)
 
 
@@ -59,19 +42,25 @@ def _scan(t, **kw) -> list[dict]:
     return items
 
 
-# ------------------------------------------------------------------ tasks
 @task(retries=2, retry_delay_seconds=3, task_run_name="health-{env}")
 def check_environment_health(env: str) -> dict:
     log = get_run_logger()
     base = GATEWAY_URLS[env]
-    result = {"env": env, "gateway_live": False, "gateway_ready": False, "graphql_ok": False,
-              "tables_ok": False, "latency_ms": None}  # fmt: skip
+    result = {
+        "env": env,
+        "gateway_live": False,
+        "gateway_ready": False,
+        "graphql_ok": False,
+        "tables_ok": False,
+        "latency_ms": None,
+    }
     try:
         t0 = time.perf_counter()
         result["gateway_live"] = httpx.get(f"{base}/healthz", timeout=5).status_code == 200
         result["gateway_ready"] = httpx.get(f"{base}/readyz", timeout=5).status_code == 200
-        r = httpx.post(f"{base}/graphql", json={"query": "{ environment { name version } stations { stationId } }"},
-                       timeout=10)  # fmt: skip
+        r = httpx.post(
+            f"{base}/graphql", json={"query": "{ environment { name version } stations { stationId } }"}, timeout=10
+        )
         data = r.json().get("data") or {}
         result["graphql_ok"] = data.get("environment", {}).get("name") == env and bool(data.get("stations"))
         result["version"] = data.get("environment", {}).get("version")
@@ -92,7 +81,6 @@ def check_environment_health(env: str) -> dict:
 
 @task(task_run_name="audit-sagas-{env}")
 def audit_saga_consistency(env: str, orphan_minutes: int = 2) -> dict:
-    """Cruza el log de SAGAs con las tablas de cada servicio (Database-per-Service)."""
     log = get_run_logger()
     sagas = _scan(_table(env, "sagas"))
     res_t, bill_t, disp_t = _table(env, "reservations"), _table(env, "billing"), _table(env, "dispatch")
@@ -133,7 +121,6 @@ def audit_saga_consistency(env: str, orphan_minutes: int = 2) -> dict:
         elif status == "COMPENSATION_FAILED":
             bad("compensación fallida: requiere intervención")
 
-    # Conectores bloqueados por SAGAs que ya terminaron (bloqueo huérfano)
     sagas_by_id = {s["saga_id"]: s for s in sagas}
     for c in _scan(res_t, FilterExpression=Attr("entity").eq("CONNECTOR") & Attr("status").ne("AVAILABLE")):
         owner = sagas_by_id.get(c.get("reserved_by", ""))
@@ -146,10 +133,16 @@ def audit_saga_consistency(env: str, orphan_minutes: int = 2) -> dict:
                 }
             )
 
-    result = {"env": env, "total": len(sagas), "by_status": dict(by_status), "orphans": orphans,
-              "inconsistencies": inconsistencies}  # fmt: skip
-    log.info(f"[{env}] SAGAs={len(sagas)} {dict(by_status)} huérfanas={len(orphans)} "
-             f"inconsistencias={len(inconsistencies)}")  # fmt: skip
+    result = {
+        "env": env,
+        "total": len(sagas),
+        "by_status": dict(by_status),
+        "orphans": orphans,
+        "inconsistencies": inconsistencies,
+    }
+    log.info(
+        f"[{env}] SAGAs={len(sagas)} {dict(by_status)} huérfanas={len(orphans)} inconsistencias={len(inconsistencies)}"
+    )
     return result
 
 
@@ -191,7 +184,7 @@ def publish_metrics(env: str, health: dict, audit: dict, recovered: list[dict]) 
         MetricData=[
             {"MetricName": k, "Value": v, "Dimensions": [{"Name": "Source", "Value": "prefect"}]}
             for k, v in metrics.items()
-        ],  # fmt: skip
+        ],
     )
     logs = _aws("client", "logs")
     group, stream = f"/aegisvolt/{env}/prefect-observability", datetime.now(UTC).strftime("%Y-%m-%d")
@@ -199,16 +192,32 @@ def publish_metrics(env: str, health: dict, audit: dict, recovered: list[dict]) 
         logs.create_log_stream(logGroupName=group, logStreamName=stream)
     except logs.exceptions.ResourceAlreadyExistsException:
         pass
-    logs.put_log_events(logGroupName=group, logStreamName=stream, logEvents=[{
-        "timestamp": int(time.time() * 1000),
-        "message": json.dumps({"timestamp": datetime.now(UTC).isoformat(), "level": "INFO",
-                               "service": "prefect-observability", "env": env, "event": "OBSERVABILITY_REPORT",
-                               "correlation_id": "-", "metrics": metrics, "orphans": audit["orphans"],
-                               "inconsistencies": audit["inconsistencies"]}, default=str)}])  # fmt: skip
+    logs.put_log_events(
+        logGroupName=group,
+        logStreamName=stream,
+        logEvents=[
+            {
+                "timestamp": int(time.time() * 1000),
+                "message": json.dumps(
+                    {
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "level": "INFO",
+                        "service": "prefect-observability",
+                        "env": env,
+                        "event": "OBSERVABILITY_REPORT",
+                        "correlation_id": "-",
+                        "metrics": metrics,
+                        "orphans": audit["orphans"],
+                        "inconsistencies": audit["inconsistencies"],
+                    },
+                    default=str,
+                ),
+            }
+        ],
+    )
     get_run_logger().info(f"[{env}] métricas publicadas en CloudWatch AegisVolt/{env}: {metrics}")
 
 
-# ------------------------------------------------------------------ flow
 @flow(name="aegisvolt-observability", log_prints=True)
 def aegisvolt_observability(envs: list[str] | None = None, orphan_minutes: int = 2, auto_recover: bool = True) -> dict:
     envs = envs or ["dev", "test", "prod"]
@@ -222,17 +231,26 @@ def aegisvolt_observability(envs: list[str] | None = None, orphan_minutes: int =
         recovered = recover_orphan_sagas(e, audit["orphans"]) if (auto_recover and audit["orphans"]) else []
         publish_metrics(e, health, audit, recovered)
         report[e] = {"health": health, "audit": audit, "recovered": recovered}
-        rows.append({
-            "ambiente": e, "saludable": "✅" if health["healthy"] else "❌", "versión": health.get("version") or "-",
-            "latencia_ms": health["latency_ms"], "sagas": audit["total"],
-            "charging": audit["by_status"].get("CHARGING", 0), "finished": audit["by_status"].get("FINISHED", 0),
-            "compensadas": audit["by_status"].get("COMPENSATED", 0), "fallidas": audit["by_status"].get("FAILED", 0),
-            "huérfanas": len(audit["orphans"]), "recuperadas": len(recovered),
-            "inconsistencias": len(audit["inconsistencies"]),
-        })  # fmt: skip
+        rows.append(
+            {
+                "ambiente": e,
+                "saludable": "✅" if health["healthy"] else "❌",
+                "versión": health.get("version") or "-",
+                "latencia_ms": health["latency_ms"],
+                "sagas": audit["total"],
+                "charging": audit["by_status"].get("CHARGING", 0),
+                "finished": audit["by_status"].get("FINISHED", 0),
+                "compensadas": audit["by_status"].get("COMPENSATED", 0),
+                "fallidas": audit["by_status"].get("FAILED", 0),
+                "huérfanas": len(audit["orphans"]),
+                "recuperadas": len(recovered),
+                "inconsistencias": len(audit["inconsistencies"]),
+            }
+        )
 
-    create_table_artifact(key="aegisvolt-environments", table=rows,
-                          description="Salud de ambientes y auditoría de SAGAs")  # fmt: skip
+    create_table_artifact(
+        key="aegisvolt-environments", table=rows, description="Salud de ambientes y auditoría de SAGAs"
+    )
     md = ["# AegisVolt · reporte de observabilidad", f"_{datetime.now(UTC):%Y-%m-%d %H:%M:%S} UTC_", ""]
     for e, r in report.items():
         md.append(f"## {e} — {'✅ saludable' if r['health']['healthy'] else '❌ con problemas'}")

@@ -1,5 +1,3 @@
-"""Integración: GraphQL -> orquestador SAGA -> 3 microservicios -> DynamoDB (Floci)."""
-
 import pytest
 
 pytestmark = pytest.mark.integration
@@ -16,8 +14,18 @@ SET_FLAG = "mutation($n:String!,$e:Boolean!){ setFeatureFlag(name:$n, enabled:$e
 
 
 def reserve(gql, connector, fleet="FLEET-IT", key=None, kwh=20):
-    data = gql(RESERVE, {"i": {"stationId": "IT-01", "connectorId": connector, "fleetId": fleet,
-                               "energyKwh": kwh, "idempotencyKey": key}})  # fmt: skip
+    data = gql(
+        RESERVE,
+        {
+            "i": {
+                "stationId": "IT-01",
+                "connectorId": connector,
+                "fleetId": fleet,
+                "energyKwh": kwh,
+                "idempotencyKey": key,
+            }
+        },
+    )
     return data["reserveAndStartCharging"]
 
 
@@ -31,8 +39,15 @@ def wallet_balance(table, fleet="FLEET-IT"):
 
 def test_schema_exposes_queries_mutations_and_subscription(gateway):
     sdl = gateway.get("/schema.graphql").text
-    for token in ("type Query", "type Mutation", "type Subscription", "reserveAndStartCharging",
-                  "featureFlags", "stationsUpdated", "correlationId"):  # fmt: skip
+    for token in (
+        "type Query",
+        "type Mutation",
+        "type Subscription",
+        "reserveAndStartCharging",
+        "featureFlags",
+        "stationsUpdated",
+        "correlationId",
+    ):
         assert token in sdl
 
 
@@ -69,13 +84,11 @@ def test_hardware_fault_flag_triggers_compensations_in_dynamodb(gql, table):
     assert saga["status"] == "COMPENSATED"
     assert saga["failedStep"] == "START_CHARGING" and saga["errorCode"] == "CHARGER_HARDWARE_FAULT"
     assert [s["name"] for s in saga["steps"] if s["action"] == "COMPENSATE"] == ["REFUND_WALLET", "RELEASE_CONNECTOR"]
-    # billing: cobro REFUNDED + evento de reversión REFUND; saldo restaurado
     sid = saga["sagaId"]
     charge = table("billing").get_item(Key={"pk": "WALLET#FLEET-IT", "sk": f"TX#{sid}#CHARGE"})["Item"]
     refund = table("billing").get_item(Key={"pk": "WALLET#FLEET-IT", "sk": f"TX#{sid}#REFUND"})["Item"]
     assert charge["status"] == "REFUNDED" and refund["amount"] == charge["amount"]
     assert wallet_balance(table) == pytest.approx(before)
-    # reservas: conector de vuelta a AVAILABLE, reserva RELEASED
     assert connector(table, "C2")["status"] == "AVAILABLE"
     res = table("reservations").get_item(Key={"pk": f"RESERVATION#{sid}", "sk": "META"})["Item"]
     assert res["status"] == "RELEASED" and res["released_reason"] == "COMPENSATION"
