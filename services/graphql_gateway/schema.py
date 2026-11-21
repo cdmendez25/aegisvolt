@@ -1,12 +1,3 @@
-"""Esquema GraphQL unificado de AegisVolt (capa de agregación).
-
-Queries    -> consultan estaciones, billeteras, transacciones, sesiones, telemetría,
-              SAGAs y feature flags (agregando datos de los 3 microservicios).
-Mutations  -> reserveAndStartCharging (dispara la SAGA), finishCharging,
-              recoverSaga, setFeatureFlag.
-Subscription -> stationsUpdated (WSS): estado de conectores en tiempo real.
-"""
-
 import asyncio
 from collections.abc import AsyncGenerator
 from enum import Enum
@@ -19,7 +10,6 @@ from aegis_common.flags import KNOWN_FLAGS
 from .saga import ReserveCommand, SagaRecord
 
 
-# ------------------------------------------------------------------ tipos
 @strawberry.enum
 class ConnectorStatus(Enum):
     AVAILABLE = "AVAILABLE"
@@ -216,7 +206,6 @@ class ReserveAndStartChargingInput:
     )
 
 
-# ------------------------------------------------------------------ helpers
 def _ctx(info: Info):
     return info.context["deps"]
 
@@ -245,7 +234,6 @@ def _reading(r: dict) -> TelemetryReading:
     return TelemetryReading(**{k: r[k] for k in keys})
 
 
-# ------------------------------------------------------------------ schema
 @strawberry.type
 class Query:
     @strawberry.field(description="Ambiente al que está conectado el frontend")

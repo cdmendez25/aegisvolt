@@ -1,28 +1,3 @@
-"""Orquestador SAGA: "Reservar y Activar Carga".
-
-Patrón SAGA por ORQUESTACIÓN: un coordinador central (este módulo, en la capa
-GraphQL) invoca cada paso y, si alguno falla, ejecuta las transacciones
-compensatorias en ORDEN INVERSO.
-
-  Paso 1  station-reservation  POST /reservations           comp: POST /reservations/{id}/release
-  Paso 2  billing-wallet       POST /charges                comp: POST /charges/{id}/refund
-  Paso 3  energy-dispatch      POST /sessions               (último paso: no requiere compensación)
-
-  Falla paso 3 -> refund (billing)  y luego release (reservas)
-  Falla paso 2 -> release (reservas)
-  Falla paso 1 -> nada que compensar (FAILED)
-
-Estados: STARTED -> RESERVED -> PAID -> CHARGING -> FINISHED
-                     \\-> COMPENSATING -> COMPENSATED | COMPENSATION_FAILED
-         STARTED -> FAILED
-
-Idempotencia:
-  * saga_id = uuid5(idempotency_key): reintentar la mutación con la misma clave
-    devuelve la MISMA saga (no se cobra ni reserva dos veces).
-  * Todas las llamadas llevan saga_id; cada servicio deduplica por saga_id.
-  * Las compensaciones se reintentan con backoff y son no-op si ya se aplicaron.
-"""
-
 import asyncio
 import logging
 import uuid
@@ -37,7 +12,7 @@ from .clients import Services, StepResult
 
 log = logging.getLogger("graphql-gateway.saga")
 
-SAGA_NAMESPACE = uuid.UUID("6f1c3f0e-5c3a-4b8e-9a51-0a0e615a9a01")  # namespace fijo de AegisVolt
+SAGA_NAMESPACE = uuid.UUID("6f1c3f0e-5c3a-4b8e-9a51-0a0e615a9a01")
 TERMINAL = {"CHARGING", "FINISHED", "FAILED", "COMPENSATED", "COMPENSATION_FAILED"}
 IN_FLIGHT = {"STARTED", "RESERVED", "PAID", "COMPENSATING"}
 
@@ -83,7 +58,7 @@ class SagaRecord:
 
 
 class SagaStore(Protocol):
-    def create(self, saga: SagaRecord) -> bool: ...  # False si ya existía
+    def create(self, saga: SagaRecord) -> bool: ...
     def get(self, saga_id: str) -> SagaRecord | None: ...
     def save(self, saga: SagaRecord) -> None: ...
     def list(self, limit: int = 50, status: str | None = None) -> list[SagaRecord]: ...
@@ -110,7 +85,6 @@ class SagaOrchestrator:
         self.backoff_base = backoff_base
         self.sleep = sleep
 
-    # ------------------------------------------------------------------ run
     async def reserve_and_start_charging(self, cmd: ReserveCommand) -> SagaRecord:
         key = cmd.idempotency_key or str(uuid.uuid4())
         saga_id = saga_id_for(key)
@@ -135,7 +109,7 @@ class SagaOrchestrator:
             )
             return existing  # type: ignore[return-value]
 
-        token = correlation_id_var.set(saga_id)  # todos los logs llevan correlation_id = saga_id
+        token = correlation_id_var.set(saga_id)
         try:
             return await self._execute(saga)
         finally:
@@ -153,7 +127,6 @@ class SagaOrchestrator:
             },
         )
 
-        # ---------------- Paso 1: reservar conector ----------------
         r1 = await self.svc.reservation.call(
             "POST",
             "/reservations",
@@ -176,7 +149,6 @@ class SagaOrchestrator:
         saga.status = "RESERVED"
         self.store.save(saga)
 
-        # ---------------- Paso 2: cobrar ----------------
         r2 = await self.svc.billing.call(
             "POST",
             "/charges",
@@ -197,7 +169,6 @@ class SagaOrchestrator:
         saga.status = "PAID"
         self.store.save(saga)
 
-        # ---------------- Paso 3: activar cargador ----------------
         r3 = await self.svc.dispatch.call(
             "POST",
             "/sessions",
@@ -216,7 +187,6 @@ class SagaOrchestrator:
             return await self._compensate(saga, r3, "START_CHARGING", ["REFUND_WALLET", "RELEASE_CONNECTOR"])
         saga.add_step("START_CHARGING", "EXECUTE", "SUCCEEDED", "Flujo eléctrico activo")
 
-        # Post-éxito: marcar el conector CHARGING (no crítico: la carga ya inició)
         c = await self.svc.reservation.call("POST", f"/reservations/{sid}/confirm", sid)
         if not c.ok:
             log.warning(
@@ -227,7 +197,6 @@ class SagaOrchestrator:
         log.info("SAGA completada: carga activa", extra={"event": "SAGA_COMPLETED", "amount": saga.amount})
         return saga
 
-    # ------------------------------------------------------------------ fallos
     def _fail(self, saga: SagaRecord, r: StepResult, step: str) -> SagaRecord:
         saga.status = "FAILED"
         saga.failed_step, saga.error_code, saga.error_message = step, r.error_code, r.message
@@ -300,13 +269,11 @@ class SagaOrchestrator:
         result = StepResult(ok=False)
         for attempt in range(1, self.compensation_attempts + 1):
             result = await fn()
-            # Un 4xx de negocio en una compensación no mejora reintentando
             if result.ok or not result.uncertain:
                 return result, attempt
             await self.sleep(self.backoff_base * 2 ** (attempt - 1))
         return result, self.compensation_attempts
 
-    # ------------------------------------------------------------------ otros
     async def finish_charging(self, saga_id: str) -> SagaRecord:
         saga = self.store.get(saga_id)
         if not saga:
@@ -337,9 +304,6 @@ class SagaOrchestrator:
             correlation_id_var.reset(token)
 
     async def recover(self, saga_id: str) -> SagaRecord:
-        """Recuperación de SAGAs HUÉRFANAS (ej. el pod murió a mitad del flujo).
-        Prefect la invoca: como las compensaciones son idempotentes, compensar
-        todo lo posible es seguro aunque no sepamos en qué paso quedó."""
         saga = self.store.get(saga_id)
         if not saga:
             raise ValueError("SAGA no encontrada")

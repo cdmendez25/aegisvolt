@@ -1,13 +1,3 @@
-"""Clientes HTTP hacia los microservicios.
-
-Cada llamada devuelve un StepResult que distingue:
-  ok=True                    -> el paso se aplicó
-  ok=False, uncertain=False  -> el servicio RECHAZÓ el paso (4xx de negocio): seguro que no se aplicó
-  ok=False, uncertain=True   -> timeout / 5xx / red: NO sabemos si se aplicó
-                                => el orquestador compensa igualmente (las compensaciones son
-                                   idempotentes y no-op si el paso nunca ocurrió)
-"""
-
 import os
 from dataclasses import dataclass, field
 from typing import Any

@@ -1,5 +1,3 @@
-# Expone el gateway GraphQL en un NodePort fijo por ambiente. En AWS real este puerto es el
-# destino del NLB interno al que apunta el VPC Link del API Gateway privado.
 apiVersion: v1
 kind: Service
 metadata:
@@ -9,4 +7,4 @@ spec:
   type: NodePort
   selector: {app: graphql-gateway}
   ports:
-    - {name: http, port: 8000, targetPort: http, nodePort: 30081}  # el overlay lo cambia
+    - {name: http, port: 8000, targetPort: http, nodePort: 30081}

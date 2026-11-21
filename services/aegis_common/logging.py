@@ -1,11 +1,3 @@
-"""Logging estructurado JSON + envío a CloudWatch Logs.
-
-Cada línea de log incluye: timestamp, level, service, env, version, revision,
-pod, correlation_id (= saga_id en el flujo SAGA), event y campos extra.
-Se escribe a stdout (kubectl logs) y, si CLOUDWATCH_ENABLED=true, se envía en
-lotes al grupo /aegisvolt/<env>/<servicio> con un log stream por pod.
-"""
-
 import contextvars
 import json
 import logging
@@ -50,8 +42,6 @@ class JsonFormatter(logging.Formatter):
 
 
 class CloudWatchLogsHandler(logging.Handler):
-    """Handler no bloqueante: encola y un hilo envía lotes con PutLogEvents."""
-
     def __init__(self, settings: Settings, flush_interval: float = 2.0):
         super().__init__()
         self.s = settings
@@ -104,7 +94,7 @@ class CloudWatchLogsHandler(logging.Handler):
                 logStreamName=self.stream,
                 logEvents=[{"timestamp": ts, "message": msg} for ts, msg in batch],
             )
-        except Exception as exc:  # nunca romper el servicio por fallas de logging
+        except Exception as exc:
             self._ready = False
             sys.stderr.write(f'{{"level":"WARNING","message":"cloudwatch logs flush failed: {exc}"}}\n')
 

@@ -1,12 +1,3 @@
-# -----------------------------------------------------------------------------
-# MÓDULO EKS
-# - Políticas IAM de mínimo privilegio por microservicio (siempre se crean):
-#   cada servicio solo puede tocar SU tabla (Database-per-Service a nivel IAM).
-# - Clúster EKS + node group en subredes PRIVADAS (solo si enable_eks = true).
-#   En local se usa kind como sustituto del plano de datos; este módulo deja
-#   declarada la topología equivalente para AWS real.
-# -----------------------------------------------------------------------------
-
 terraform {
   required_providers {
     aws = { source = "hashicorp/aws" }
@@ -17,7 +8,6 @@ locals {
   name = "${var.project}-${var.env}"
 }
 
-# ---------------- IAM mínimo privilegio por servicio -----------------
 resource "aws_iam_policy" "service" {
   for_each    = var.service_tables
   name        = "${local.name}-${each.key}-policy"
@@ -53,7 +43,6 @@ resource "aws_iam_policy" "service" {
   tags = var.tags
 }
 
-# ---------------- Clúster EKS (opcional) -----------------
 data "aws_iam_policy_document" "eks_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -113,8 +102,8 @@ resource "aws_eks_cluster" "this" {
   vpc_config {
     subnet_ids              = var.private_subnet_ids
     security_group_ids      = [var.nodes_sg_id]
-    endpoint_private_access = true  # API de K8s accesible desde la VPC
-    endpoint_public_access  = false # y NO desde internet
+    endpoint_private_access = true
+    endpoint_public_access  = false
   }
 
   depends_on = [aws_iam_role_policy_attachment.cluster]

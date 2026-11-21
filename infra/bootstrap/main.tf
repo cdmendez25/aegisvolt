@@ -1,11 +1,3 @@
-# -----------------------------------------------------------------------------
-# BOOTSTRAP: crea el backend remoto donde viven los tfstate de dev/test/prod.
-#
-# Es el único módulo con estado LOCAL (huevo y gallina: el bucket que guarda
-# los estados no puede guardar su propio estado antes de existir).
-# Se ejecuta una sola vez:  terraform -chdir=infra/bootstrap init && apply
-# -----------------------------------------------------------------------------
-
 terraform {
   required_version = ">= 1.10"
   required_providers {
@@ -44,11 +36,9 @@ provider "aws" {
   }
 }
 
-# Bucket de estados remotos
 resource "aws_s3_bucket" "tfstate" {
   bucket = var.state_bucket_name
 
-  # Nunca destruir por accidente el bucket que contiene la historia de la infra
   lifecycle {
     prevent_destroy = true
   }
@@ -60,9 +50,6 @@ resource "aws_s3_bucket" "tfstate" {
   }
 }
 
-# VERSIONAMIENTO: cada `terraform apply` crea una nueva versión del objeto
-# env:/<workspace>/aegisvolt/terraform.tfstate y las anteriores quedan como
-# backups recuperables (list-object-versions + get-object --version-id).
 resource "aws_s3_bucket_versioning" "tfstate" {
   bucket = aws_s3_bucket.tfstate.id
   versioning_configuration {
@@ -87,7 +74,6 @@ resource "aws_s3_bucket_public_access_block" "tfstate" {
   restrict_public_buckets = true
 }
 
-# Retener backups antiguos 90 días (las versiones no actuales se limpian luego)
 resource "aws_s3_bucket_lifecycle_configuration" "tfstate" {
   bucket = aws_s3_bucket.tfstate.id
   rule {
@@ -100,9 +86,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "tfstate" {
   }
   depends_on = [aws_s3_bucket_versioning.tfstate]
 }
-
-# Nota: el lock de estado usa `use_lockfile = true` del backend S3
-# (archivo <state>.tflock con escritura condicional), no requiere DynamoDB.
 
 output "state_bucket" {
   value = aws_s3_bucket.tfstate.bucket

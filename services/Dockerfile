@@ -1,7 +1,3 @@
-# Imagen de UN microservicio de AegisVolt.
-#   docker build -f services/Dockerfile --build-arg SERVICE=billing_wallet -t aegisvolt/billing-wallet-service:TAG .
-# Cada imagen contiene SOLO su paquete + la librería común: despliegue independiente.
-
 FROM python:3.13-slim AS deps
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 COPY services/requirements.txt /tmp/requirements.txt

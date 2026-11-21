@@ -6,7 +6,6 @@ import pytest
 from billing_wallet.pricing import is_peak, parse_peak_hours, quote
 from energy_dispatch.telemetry import reading
 
-# 2026-11-20 23:00 UTC = 18:00 en Bogotá (hora pico); 15:00 UTC = 10:00 Bogotá
 PEAK_TIME = datetime(2026, 11, 20, 23, 0, tzinfo=UTC)
 OFF_PEAK_TIME = datetime(2026, 11, 20, 15, 0, tzinfo=UTC)
 
@@ -26,7 +25,7 @@ def test_is_peak_uses_bogota_timezone():
 def test_surge_applies_only_with_flag_and_peak():
     on_peak = quote("FAST", Decimal("40"), True, PEAK_TIME, (17, 21))
     assert on_peak.multiplier == Decimal("1.5")
-    assert on_peak.amount == Decimal("18.00")  # 0.30 * 1.5 * 40
+    assert on_peak.amount == Decimal("18.00")
 
     flag_off = quote("FAST", Decimal("40"), False, PEAK_TIME, (17, 21))
     assert flag_off.multiplier == 1 and flag_off.amount == Decimal("12.00")
@@ -56,7 +55,6 @@ def test_telemetry_progresses_and_completes():
 
 def test_telemetry_tapers_after_80_percent():
     start = datetime(2026, 1, 1, tzinfo=UTC)
-    # 0.95*50 kW llega a 32 kWh (80% de 40) en ~40.4 min simulados => 40.4 s reales
     before = reading(start, start + timedelta(seconds=30), 50, 40, speedup=60)
     after = reading(start, start + timedelta(seconds=45), 50, 40, speedup=60)
     assert before.power_kw > 40 and after.power_kw < 25

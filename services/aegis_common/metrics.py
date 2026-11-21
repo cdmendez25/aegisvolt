@@ -1,10 +1,3 @@
-"""Métricas HTTP publicadas a CloudWatch (namespace AegisVolt/<env>).
-
-Requests y Http5xx por servicio, con dos juegos de dimensiones:
-  {Service}            -> alarmas generales del ambiente
-  {Service, Revision}  -> el análisis Canary compara SOLO la revisión nueva
-"""
-
 import logging
 import threading
 import time

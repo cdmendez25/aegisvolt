@@ -1,5 +1,3 @@
-"""Fixtures unitarias: DynamoDB simulado en memoria con moto (sin red, sin Floci)."""
-
 import os
 
 os.environ.update(
@@ -101,7 +99,7 @@ def aws():
 
 
 def _fresh_flags(app_module):
-    app_module.flags._loaded_at = 0.0  # invalida el caché de flags entre tests
+    app_module.flags._loaded_at = 0.0
 
 
 @pytest.fixture

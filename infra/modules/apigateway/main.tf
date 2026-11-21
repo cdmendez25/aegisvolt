@@ -1,17 +1,3 @@
-# -----------------------------------------------------------------------------
-# MÓDULO APIGATEWAY  —  API REST *PRIVADA* delante del gateway GraphQL en K8s
-#
-# Recorrido de un paquete (AWS real, enable_vpc_link = true):
-#   Cliente en la VPC ──HTTPS──> Interface VPCE execute-api (ENI en subred privada,
-#   SG vpce: 443 desde la VPC) ──> API Gateway (endpoint PRIVATE; la resource policy
-#   solo acepta aws:SourceVpce = ese VPCE) ──> VPC Link ──> NLB interno (subredes
-#   privadas) ──TCP NodePort──> nodos EKS (SG k8s_nodes: NodePort solo desde
-#   subredes privadas) ──kube-proxy──> Service ──> Pod graphql-gateway.
-#
-# En Floci (enable_vpc_link = false) la integración es HTTP_PROXY directa al
-# NodePort del nodo kind, ya que el emulador no enruta por VPC Links.
-# -----------------------------------------------------------------------------
-
 terraform {
   required_providers {
     aws = { source = "hashicorp/aws" }
@@ -23,7 +9,6 @@ locals {
   backend_uri = var.enable_vpc_link ? "http://${aws_lb.internal.dns_name}:${var.graphql_node_port}" : var.backend_base_url
 }
 
-# ---------------- NLB interno + target group hacia el NodePort -----------------
 resource "aws_lb" "internal" {
   name               = "${local.name}-gql-nlb"
   internal           = true
@@ -37,7 +22,7 @@ resource "aws_lb_target_group" "graphql" {
   port        = var.graphql_node_port
   protocol    = "TCP"
   vpc_id      = var.vpc_id
-  target_type = "instance" # los nodos del node group se registran vía ASG
+  target_type = "instance"
 
   health_check {
     protocol = "HTTP"
@@ -64,7 +49,6 @@ resource "aws_api_gateway_vpc_link" "this" {
   tags        = var.tags
 }
 
-# ---------------- API REST privada -----------------
 resource "aws_api_gateway_rest_api" "this" {
   name        = "${local.name}-api"
   description = "AegisVolt GraphQL API (${var.env})"
@@ -77,7 +61,6 @@ resource "aws_api_gateway_rest_api" "this" {
   tags = var.tags
 }
 
-# Solo se puede invocar desde el VPC Endpoint de este ambiente
 resource "aws_api_gateway_rest_api_policy" "this" {
   rest_api_id = aws_api_gateway_rest_api.this.id
   policy = jsonencode({
@@ -139,7 +122,6 @@ resource "aws_api_gateway_integration" "route" {
 resource "aws_api_gateway_deployment" "this" {
   rest_api_id = aws_api_gateway_rest_api.this.id
 
-  # Redesplegar cuando cambien rutas o integraciones
   triggers = {
     redeploy = sha1(jsonencode([
       aws_api_gateway_integration.route,

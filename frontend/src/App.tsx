@@ -38,7 +38,7 @@ function useDashboard() {
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refresh, POLL_MS); // "tiempo real" por polling cada 2 s
+    const id = setInterval(refresh, POLL_MS);
     return () => clearInterval(id);
   }, [refresh]);
 
